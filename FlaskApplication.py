@@ -8,17 +8,25 @@ from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 import base64
 import io
+from datetime import datetime
+import random
 
 app = Flask(__name__)
 
-# Initialize models
+# Initialize models and databases
 trad_model = RandomForestClassifier()
 llm_model = LogisticRegression(max_iter=10000)
 label_encoder = LabelEncoder()
 
-# Minimal model initialization
+# Medication database
+MED_DB = {
+    "ibuprofen": {"ckd_risk": "High", "alternatives": ["acetaminophen"]},
+    "metformin": {"ckd_risk": "Moderate", "warning": "Adjust dose if eGFR <45"},
+    "lisinopril": {"ckd_risk": "Low", "benefit": "Kidney protective"}
+}
+
+# Initialize models
 def init_models():
-    # Small demo dataset just to initialize
     X_demo = pd.DataFrame({
         'Age': [50, 60, 70],
         'Blood Pressure': [120, 140, 160],
@@ -36,11 +44,11 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Kidney Health Portal</title>
+    <title>Advanced Kidney Health Portal</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
-            max-width: 1000px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             background-color: #f5f9fc;
@@ -53,35 +61,27 @@ HTML_TEMPLATE = """
             padding: 20px;
             border-radius: 8px;
         }
-        .button-container {
+        .dashboard {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
         .health-btn {
             background-color: #2980b9;
             color: white;
             border: none;
-            padding: 20px;
+            padding: 15px;
             border-radius: 8px;
-            font-size: 18px;
             cursor: pointer;
-            text-align: center;
-            transition: all 0.3s;
-        }
-        .health-btn:hover {
-            background-color: #3498db;
-            transform: translateY(-3px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .tool-container {
-            display: none;
-            margin-top: 30px;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin: 5px;
+            width: 100%;
         }
         .close-btn {
             float: right;
@@ -95,184 +95,278 @@ HTML_TEMPLATE = """
         .form-group {
             margin-bottom: 15px;
         }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
+        #radarChart, #progressionChart {
+            max-width: 100%;
+            margin: 0 auto;
         }
-        input, select {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        .results {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
+        .badge {
+            display: inline-block;
+            background: #27ae60;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-right: 5px;
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="header">
-        <h1>Kidney Health Portal</h1>
-        <p>Select a tool to get started</p>
+        <h1>Advanced Kidney Health Portal</h1>
+        <p>Comprehensive CKD risk assessment and management</p>
     </div>
 
-    <div class="button-container">
-        <button class="health-btn" onclick="showTool('riskTool')">
-            CKD Risk Calculator
-        </button>
-        <button class="health-btn" onclick="showTool('stageTool')">
-            CKD Stage Predictor
-        </button>
-        <button class="health-btn" onclick="showTool('dietTool')">
-            Nutrition Guide
-        </button>
-        <button class="health-btn" onclick="showTool('doctorTool')">
-            Find a Specialist
-        </button>
-    </div>
+    <div class="dashboard">
+        <!-- Left Column -->
+        <div>
+            <!-- 1. Interactive Risk Visualization -->
+            <div class="card">
+                <h2>Your Kidney Health Radar</h2>
+                <img id="radarChart" src="" alt="Risk Factors Radar Chart">
+            </div>
 
-    <!-- CKD Risk Calculator -->
-    <div id="riskTool" class="tool-container">
-        <button class="close-btn" onclick="hideTool('riskTool')">×</button>
-        <h2>CKD Risk Calculator</h2>
-        <form id="riskForm">
-            <div class="form-group">
-                <label for="riskAge">Age (years):</label>
-                <input type="number" id="riskAge" name="age" min="18" max="120" required>
+            <!-- 2. Personalized Action Plan -->
+            <div class="card">
+                <h2>Your Action Plan</h2>
+                <ul id="actionPlan"></ul>
             </div>
-            <div class="form-group">
-                <label for="riskSex">Sex:</label>
-                <select id="riskSex" name="sex" required>
-                    <option value="">Select...</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                </select>
-            </div>
-            <button type="submit">Calculate Risk</button>
-        </form>
-        <div id="riskResults" class="results" style="display:none;"></div>
-    </div>
 
-    <!-- CKD Stage Predictor -->
-    <div id="stageTool" class="tool-container">
-        <button class="close-btn" onclick="hideTool('stageTool')">×</button>
-        <h2>CKD Stage Prediction</h2>
-        <form id="stageForm">
-            <div class="form-group">
-                <label for="stageAge">Age:</label>
-                <input type="number" id="stageAge" name="Age" required>
+            <!-- 3. AR Kidney Scan (Placeholder) -->
+            <div class="card">
+                <h2>Lab Report Scanner <span class="badge">NEW</span></h2>
+                <button class="health-btn" onclick="startARScan()">
+                    <i class="fas fa-camera"></i> Scan Lab Report
+                </button>
+                <div id="arResults"></div>
             </div>
-            <div class="form-group">
-                <label for="stageBP">Blood Pressure (mmHg):</label>
-                <input type="number" id="stageBP" name="Blood Pressure" required>
-            </div>
-            <div class="form-group">
-                <label for="stageCreatinine">Serum Creatinine (mg/dL):</label>
-                <input type="number" step="0.1" id="stageCreatinine" name="Serum Creatinine" required>
-            </div>
-            <div class="form-group">
-                <label for="stageAlbumin">Albumin (g/dL):</label>
-                <input type="number" step="0.1" id="stageAlbumin" name="Albumin" required>
-            </div>
-            <button type="submit">Predict Stage</button>
-        </form>
-        <div id="stageResults" class="results" style="display:none;"></div>
-    </div>
-
-    <!-- Nutrition Guide -->
-    <div id="dietTool" class="tool-container">
-        <button class="close-btn" onclick="hideTool('dietTool')">×</button>
-        <h2>CKD Nutrition Guide</h2>
-        <div class="form-group">
-            <h3>Stage 1-2</h3>
-            <p>• Reduce sodium to &lt;2,300mg/day</p>
-            <p>• Maintain normal protein intake (0.8g/kg)</p>
-            <p>• Limit processed foods</p>
         </div>
-        <div class="form-group">
-            <h3>Stage 3-4</h3>
-            <p>• Potassium: 2,000-3,000mg/day</p>
-            <p>• Phosphorus: 800-1,000mg/day</p>
-            <p>• Protein: 0.6-0.8g/kg/day</p>
+
+        <!-- Right Column -->
+        <div>
+            <!-- 4. Voice Symptom Checker -->
+            <div class="card">
+                <h2>Voice Symptom Checker</h2>
+                <button class="health-btn" id="voiceBtn" onclick="startVoiceRecording()">
+                    <i class="fas fa-microphone"></i> Describe Your Symptoms
+                </button>
+                <div id="symptomResults"></div>
+            </div>
+
+            <!-- 5. Progression Timeline -->
+            <div class="card">
+                <h2>Projected Kidney Function</h2>
+                <canvas id="progressionChart"></canvas>
+            </div>
+
+            <!-- 6. Medication Checker -->
+            <div class="card">
+                <h2>Medication Safety Check</h2>
+                <input type="text" id="medInput" placeholder="Enter medication name">
+                <button class="health-btn" onclick="checkMedication()">
+                    Check Safety
+                </button>
+                <div id="medResults"></div>
+            </div>
         </div>
     </div>
 
-    <!-- Find a Specialist -->
-    <div id="doctorTool" class="tool-container">
-        <button class="close-btn" onclick="hideTool('doctorTool')">×</button>
-        <h2>Find a Nephrologist</h2>
-        <div class="form-group">
-            <button class="health-btn" onclick="window.open('https://www.kidney.org/professionals/kdoqi', '_blank')">
-                NKF Professional Resources
-            </button>
-        </div>
-        <div class="form-group">
-            <button class="health-btn" onclick="window.open('https://www.asn-online.org/find-a-nephrologist/', '_blank')">
-                ASN Nephrologist Finder
-            </button>
-        </div>
-        <div class="form-group">
-            <button class="health-btn" onclick="window.open('https://www.kidney.org/transplantation/transaction/TC/Centers', '_blank')">
-                Transplant Centers
-            </button>
-        </div>
+    <!-- 7. 3D Kidney Explorer Modal -->
+    <div id="kidney3dModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; padding:50px;">
+        <button class="close-btn" onclick="hideModal('kidney3dModal')">×</button>
+        <iframe src="https://www.visiblebody.com/learn/urinary/kidneys" style="width:100%; height:90%; border:none;"></iframe>
+    </div>
+
+    <!-- 8. Nutrition AI Modal -->
+    <div id="nutritionModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; padding:50px; color:white;">
+        <button class="close-btn" onclick="hideModal('nutritionModal')">×</button>
+        <h2>Personalized Nutrition Plan</h2>
+        <div id="nutritionPlan"></div>
+    </div>
+
+    <!-- 9. Telehealth Modal -->
+    <div id="telehealthModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; padding:50px; color:white;">
+        <button class="close-btn" onclick="hideModal('telehealthModal')">×</button>
+        <h2>Book Nephrologist Consultation</h2>
+        <div id="doctorSlots"></div>
+    </div>
+
+    <!-- 10. Gamification Dashboard -->
+    <div style="position:fixed; bottom:20px; right:20px; background:white; padding:15px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.2);">
+        <h3>Your Kidney Health Score: <span id="healthScore">0</span></h3>
+        <div id="badges"></div>
     </div>
 
     <script>
-        function showTool(toolId) {
-            document.querySelectorAll('.tool-container').forEach(tool => {
-                tool.style.display = 'none';
-            });
-            document.getElementById(toolId).style.display = 'block';
-        }
-        
-        function hideTool(toolId) {
-            document.getElementById(toolId).style.display = 'none';
-        }
-
-        // Risk form handler
-        document.getElementById('riskForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            document.getElementById('riskResults').style.display = 'block';
-            document.getElementById('riskResults').innerHTML = `
-                <h3>Risk Assessment</h3>
-                <p>Based on your inputs, you have <strong>moderate risk</strong> for CKD.</p>
-                <p>Recommend consulting a healthcare provider for full evaluation.</p>
-            `;
-        });
-
-        // Stage prediction handler
-        document.getElementById('stageForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = {
-                Age: parseFloat(document.getElementById('stageAge').value),
-                'Blood Pressure': parseFloat(document.getElementById('stageBP').value),
-                'Serum Creatinine': parseFloat(document.getElementById('stageCreatinine').value),
-                Albumin: parseFloat(document.getElementById('stageAlbumin').value)
-            };
-            
-            try {
-                const response = await fetch('/predict', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                const data = await response.json();
+        // Global health tracker
+        const healthTracker = {
+            score: 0,
+            badges: [],
+            addPoints: function(points, area) {
+                this.score += points;
+                document.getElementById('healthScore').textContent = this.score;
                 
-                document.getElementById('stageResults').style.display = 'block';
-                document.getElementById('stageResults').innerHTML = `
-                    <h3>Prediction Results</h3>
-                    <p><strong>Hybrid Model Prediction:</strong> ${data.hybrid.stage}</p>
-                    <p><strong>Confidence:</strong> ${(data.hybrid.confidence * 100).toFixed(1)}%</p>
-                `;
-            } catch (error) {
-                alert('Prediction error: ' + error.message);
+                if (area === 'diet' && !this.badges.includes('Nutrition Pro') && this.score > 20) {
+                    this.badges.push('Nutrition Pro');
+                    updateBadges();
+                }
+            },
+            updateBadges: function() {
+                const badgeContainer = document.getElementById('badges');
+                badgeContainer.innerHTML = this.badges.map(b => 
+                    `<span class="badge">${b}</span>`).join('');
             }
+        };
+
+        // 1. Risk Visualization
+        function updateRadarChart() {
+            fetch('/get_risk_chart')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('radarChart').src = 
+                        'data:image/png;base64,' + data.chart;
+                });
+        }
+
+        // 2. Action Plan Generator
+        function generateActionPlan(riskLevel) {
+            const plans = {
+                low: ["Annual checkup", "Maintain healthy diet"],
+                moderate: ["3-month BP checks", "Reduce sodium intake"],
+                high: ["Nephrologist consult", "Monthly lab tests"]
+            };
+            document.getElementById('actionPlan').innerHTML = 
+                plans[riskLevel].map(item => `<li>${item}</li>`).join('');
+            healthTracker.addPoints(10, 'assessment');
+        }
+
+        // 3. AR Scan (simulated)
+        function startARScan() {
+            document.getElementById('arResults').innerHTML = `
+                <p><i class="fas fa-mobile-alt"></i> Point your camera at lab results</p>
+                <p>Simulated result: Creatinine 1.4 mg/dL (mild elevation)</p>
+            `;
+            healthTracker.addPoints(5, 'engagement');
+        }
+
+        // 4. Voice Symptom Checker
+        function startVoiceRecording() {
+            document.getElementById('voiceBtn').innerHTML = `
+                <i class="fas fa-stop"></i> Stop Recording`;
+            document.getElementById('symptomResults').innerHTML = `
+                <p>Listening... Say your symptoms</p>`;
+            
+            // Simulate analysis after 3 seconds
+            setTimeout(() => {
+                document.getElementById('voiceBtn').innerHTML = `
+                    <i class="fas fa-microphone"></i> Describe Your Symptoms`;
+                document.getElementById('symptomResults').innerHTML = `
+                    <p>Detected symptoms: fatigue, swelling</p>
+                    <p>Possible condition: Stage 2 CKD</p>`;
+                healthTracker.addPoints(8, 'symptoms');
+            }, 3000);
+        }
+
+        // 5. Progression Timeline
+        function renderProgressionChart(stage) {
+            const ctx = document.getElementById('progressionChart');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Now', '1 Year', '5 Years', '10 Years'],
+                    datasets: [{
+                        label: 'Kidney Function',
+                        data: stage === 1 ? [90, 85, 70, 60] : 
+                              stage === 2 ? [70, 65, 50, 40] : [40, 35, 25, 15],
+                        borderColor: '#e74c3c',
+                        tension: 0.1
+                    }]
+                }
+            });
+        }
+
+        // 6. Medication Checker
+        function checkMedication() {
+            const med = document.getElementById('medInput').value.toLowerCase();
+            fetch('/check_meds', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({medications: [med]})
+            })
+            .then(response => response.json())
+            .then(data => {
+                const result = data[med];
+                let html = `<p>No data found for ${med}</p>`;
+                if (result && typeof result === 'object') {
+                    html = `<p><strong>${med}</strong>: ${result.ckd_risk} risk</p>`;
+                    if (result.warning) html += `<p>Warning: ${result.warning}</p>`;
+                    if (result.alternatives) html += `<p>Alternatives: ${result.alternatives.join(', ')}</p>`;
+                }
+                document.getElementById('medResults').innerHTML = html;
+                healthTracker.addPoints(3, 'medication');
+            });
+        }
+
+        // 7. 3D Kidney Explorer
+        function showKidney3D() {
+            document.getElementById('kidney3dModal').style.display = 'block';
+            healthTracker.addPoints(5, 'education');
+        }
+
+        // 8. Nutrition AI
+        function getNutritionPlan() {
+            fetch('/get_diet_plan', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({weight: 70, phosphorus: 4.2})
+            })
+            .then(response => response.json())
+            .then(data => {
+                let html = '<h3>Today\'s Recommendations</h3>';
+                for (const [meal, suggestion] of Object.entries(data)) {
+                    html += `<p><strong>${meal}:</strong> ${suggestion}</p>`;
+                }
+                document.getElementById('nutritionPlan').innerHTML = html;
+                document.getElementById('nutritionModal').style.display = 'block';
+                healthTracker.addPoints(7, 'diet');
+            });
+        }
+
+        // 9. Telehealth Integration
+        function bookTelehealth() {
+            const availableSlots = {
+                "Dr. Smith": ["Mon 10AM", "Wed 2PM"],
+                "Dr. Lee": ["Tue 3PM", "Fri 11AM"]
+            };
+            let options = '';
+            for (const [doctor, slots] of Object.entries(availableSlots)) {
+                options += `<optgroup label="${doctor}">` +
+                           slots.map(s => `<option>${s}</option>`).join('') +
+                           '</optgroup>';
+            }
+            document.getElementById('doctorSlots').innerHTML = `
+                <select>${options}</select>
+                <button class="health-btn" onclick="confirmBooking()">Confirm Booking</button>`;
+            document.getElementById('telehealthModal').style.display = 'block';
+        }
+
+        // Helper functions
+        function hideModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function confirmBooking() {
+            alert('Appointment booked successfully!');
+            hideModal('telehealthModal');
+            healthTracker.addPoints(15, 'consultation');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateRadarChart();
+            generateActionPlan('moderate');
+            renderProgressionChart(2);
         });
     </script>
 </body>
@@ -289,7 +383,6 @@ def predict():
         data = request.get_json()
         input_df = pd.DataFrame([data])
         
-        # Hybrid prediction
         hybrid_proba = (trad_model.predict_proba(input_df)[0] + 
                        llm_model.predict_proba(input_df)[0]) / 2
         hybrid_pred = hybrid_proba.argmax()
@@ -303,6 +396,38 @@ def predict():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/get_risk_chart', methods=['POST'])
+def get_risk_chart():
+    # Generate radar chart
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+    categories = ['Age', 'BP', 'Diabetes', 'Kidney\nFunction', 'Family\nHistory']
+    values = [7, 5, 3, 6, 2]
+    
+    ax.plot(categories, values, color='#2980b9', linewidth=2)
+    ax.fill(categories, values, color='#2980b9', alpha=0.25)
+    
+    img_bytes = io.BytesIO()
+    plt.savefig(img_bytes, format='png')
+    plt.close()
+    return jsonify({'chart': base64.b64encode(img_bytes.getvalue()).decode()})
+
+@app.route('/check_meds', methods=['POST'])
+def check_meds():
+    user_meds = request.json.get('medications', [])
+    results = {med: MED_DB.get(med.lower(), "No data") for med in user_meds}
+    return jsonify(results)
+
+@app.route('/get_diet_plan', methods=['POST'])
+def get_diet_plan():
+    data = request.json
+    plan = {
+        "breakfast": "Egg whites with spinach" if data.get('phosphorus', 0) > 4.5 else "Oatmeal",
+        "lunch": "Grilled chicken with steamed vegetables",
+        "dinner": "Salmon with quinoa",
+        "fluids": f"{data.get('weight', 70)*30} ml/day" 
+    }
+    return jsonify(plan)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
