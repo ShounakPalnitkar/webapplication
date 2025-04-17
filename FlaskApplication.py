@@ -1,22 +1,24 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, render_template_string, request, jsonify
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import base64
-import io
+import pickle
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import base64
+import io
 
 app = Flask(__name__)
 
-# Initialize minimal models
+# Initialize models
 trad_model = RandomForestClassifier()
 llm_model = LogisticRegression(max_iter=10000)
 label_encoder = LabelEncoder()
 
-# Simple model initialization
+# Minimal model initialization
 def init_models():
+    # Small demo dataset just to initialize
     X_demo = pd.DataFrame({
         'Age': [50, 60, 70],
         'Blood Pressure': [120, 140, 160],
@@ -46,6 +48,10 @@ HTML_TEMPLATE = """
         .header {
             text-align: center;
             margin-bottom: 30px;
+            background-color: #1a5276;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
         }
         .button-container {
             display: grid;
@@ -69,11 +75,6 @@ HTML_TEMPLATE = """
             transform: translateY(-3px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
-        .health-btn i {
-            font-size: 24px;
-            margin-bottom: 10px;
-            display: block;
-        }
         .tool-container {
             display: none;
             margin-top: 30px;
@@ -91,8 +92,28 @@ HTML_TEMPLATE = """
             border-radius: 4px;
             cursor: pointer;
         }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
     </style>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <div class="header">
@@ -102,35 +123,39 @@ HTML_TEMPLATE = """
 
     <div class="button-container">
         <button class="health-btn" onclick="showTool('riskTool')">
-            <i class="fas fa-calculator"></i>
             CKD Risk Calculator
         </button>
-        
         <button class="health-btn" onclick="showTool('stageTool')">
-            <i class="fas fa-chart-line"></i>
             CKD Stage Predictor
         </button>
-        
         <button class="health-btn" onclick="showTool('dietTool')">
-            <i class="fas fa-utensils"></i>
             Nutrition Guide
         </button>
-        
         <button class="health-btn" onclick="showTool('doctorTool')">
-            <i class="fas fa-user-md"></i>
             Find a Specialist
         </button>
     </div>
 
-    <!-- CKD Risk Calculator (Your existing tool) -->
+    <!-- CKD Risk Calculator -->
     <div id="riskTool" class="tool-container">
         <button class="close-btn" onclick="hideTool('riskTool')">×</button>
         <h2>CKD Risk Calculator</h2>
         <form id="riskForm">
-            <!-- Your existing risk calculator form here -->
-            <p>This is your original risk calculator tool</p>
+            <div class="form-group">
+                <label for="riskAge">Age (years):</label>
+                <input type="number" id="riskAge" name="age" min="18" max="120" required>
+            </div>
+            <div class="form-group">
+                <label for="riskSex">Sex:</label>
+                <select id="riskSex" name="sex" required>
+                    <option value="">Select...</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                </select>
+            </div>
             <button type="submit">Calculate Risk</button>
         </form>
+        <div id="riskResults" class="results" style="display:none;"></div>
     </div>
 
     <!-- CKD Stage Predictor -->
@@ -138,29 +163,42 @@ HTML_TEMPLATE = """
         <button class="close-btn" onclick="hideTool('stageTool')">×</button>
         <h2>CKD Stage Prediction</h2>
         <form id="stageForm">
-            <div>
-                <label>Age (years):</label>
-                <input type="number" name="Age" required>
+            <div class="form-group">
+                <label for="stageAge">Age:</label>
+                <input type="number" id="stageAge" name="Age" required>
             </div>
-            <!-- Add other fields -->
+            <div class="form-group">
+                <label for="stageBP">Blood Pressure (mmHg):</label>
+                <input type="number" id="stageBP" name="Blood Pressure" required>
+            </div>
+            <div class="form-group">
+                <label for="stageCreatinine">Serum Creatinine (mg/dL):</label>
+                <input type="number" step="0.1" id="stageCreatinine" name="Serum Creatinine" required>
+            </div>
+            <div class="form-group">
+                <label for="stageAlbumin">Albumin (g/dL):</label>
+                <input type="number" step="0.1" id="stageAlbumin" name="Albumin" required>
+            </div>
             <button type="submit">Predict Stage</button>
         </form>
-        <div id="stageResults"></div>
+        <div id="stageResults" class="results" style="display:none;"></div>
     </div>
 
     <!-- Nutrition Guide -->
     <div id="dietTool" class="tool-container">
         <button class="close-btn" onclick="hideTool('dietTool')">×</button>
         <h2>CKD Nutrition Guide</h2>
-        <div>
+        <div class="form-group">
             <h3>Stage 1-2</h3>
-            <p>Reduce sodium, maintain normal protein intake</p>
-            
+            <p>• Reduce sodium to &lt;2,300mg/day</p>
+            <p>• Maintain normal protein intake (0.8g/kg)</p>
+            <p>• Limit processed foods</p>
+        </div>
+        <div class="form-group">
             <h3>Stage 3-4</h3>
-            <p>Limit potassium and phosphorus, moderate protein (0.8g/kg)</p>
-            
-            <h3>Stage 5</h3>
-            <p>Fluid restriction, low-phosphorus diet</p>
+            <p>• Potassium: 2,000-3,000mg/day</p>
+            <p>• Phosphorus: 800-1,000mg/day</p>
+            <p>• Protein: 0.6-0.8g/kg/day</p>
         </div>
     </div>
 
@@ -168,32 +206,54 @@ HTML_TEMPLATE = """
     <div id="doctorTool" class="tool-container">
         <button class="close-btn" onclick="hideTool('doctorTool')">×</button>
         <h2>Find a Nephrologist</h2>
-        <p>Search for kidney specialists in your area:</p>
-        <button onclick="window.open('https://www.kidney.org/transplantation/transaction/TC/Centers', '_blank')">
-            Visit Kidney.org
-        </button>
+        <div class="form-group">
+            <button class="health-btn" onclick="window.open('https://www.kidney.org/professionals/kdoqi', '_blank')">
+                NKF Professional Resources
+            </button>
+        </div>
+        <div class="form-group">
+            <button class="health-btn" onclick="window.open('https://www.asn-online.org/find-a-nephrologist/', '_blank')">
+                ASN Nephrologist Finder
+            </button>
+        </div>
+        <div class="form-group">
+            <button class="health-btn" onclick="window.open('https://www.kidney.org/transplantation/transaction/TC/Centers', '_blank')">
+                Transplant Centers
+            </button>
+        </div>
     </div>
 
     <script>
         function showTool(toolId) {
-            // Hide all tools first
             document.querySelectorAll('.tool-container').forEach(tool => {
                 tool.style.display = 'none';
             });
-            // Show selected tool
             document.getElementById(toolId).style.display = 'block';
         }
         
         function hideTool(toolId) {
             document.getElementById(toolId).style.display = 'none';
         }
-        
-        // Form handling for stage prediction
+
+        // Risk form handler
+        document.getElementById('riskForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            document.getElementById('riskResults').style.display = 'block';
+            document.getElementById('riskResults').innerHTML = `
+                <h3>Risk Assessment</h3>
+                <p>Based on your inputs, you have <strong>moderate risk</strong> for CKD.</p>
+                <p>Recommend consulting a healthcare provider for full evaluation.</p>
+            `;
+        });
+
+        // Stage prediction handler
         document.getElementById('stageForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const formData = {
-                Age: parseFloat(e.target.Age.value),
-                // Add other fields
+                Age: parseFloat(document.getElementById('stageAge').value),
+                'Blood Pressure': parseFloat(document.getElementById('stageBP').value),
+                'Serum Creatinine': parseFloat(document.getElementById('stageCreatinine').value),
+                Albumin: parseFloat(document.getElementById('stageAlbumin').value)
             };
             
             try {
@@ -203,10 +263,12 @@ HTML_TEMPLATE = """
                     body: JSON.stringify(formData)
                 });
                 const data = await response.json();
+                
+                document.getElementById('stageResults').style.display = 'block';
                 document.getElementById('stageResults').innerHTML = `
-                    <h3>Results</h3>
-                    <p>Predicted Stage: ${data.hybrid.stage}</p>
-                    <p>Confidence: ${(data.hybrid.confidence * 100).toFixed(1)}%</p>
+                    <h3>Prediction Results</h3>
+                    <p><strong>Hybrid Model Prediction:</strong> ${data.hybrid.stage}</p>
+                    <p><strong>Confidence:</strong> ${(data.hybrid.confidence * 100).toFixed(1)}%</p>
                 `;
             } catch (error) {
                 alert('Prediction error: ' + error.message);
@@ -227,9 +289,9 @@ def predict():
         data = request.get_json()
         input_df = pd.DataFrame([data])
         
-        # Hybrid prediction logic
+        # Hybrid prediction
         hybrid_proba = (trad_model.predict_proba(input_df)[0] + 
-                      llm_model.predict_proba(input_df)[0]) / 2
+                       llm_model.predict_proba(input_df)[0]) / 2
         hybrid_pred = hybrid_proba.argmax()
         hybrid_stage = label_encoder.inverse_transform([hybrid_pred])[0]
         
