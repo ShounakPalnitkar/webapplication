@@ -1,29 +1,9 @@
-# CORE REQUIREMENTS (Tested with Python 3.8-3.10)
 Flask==2.2.5
 pandas==1.5.3
 numpy==1.23.5
-scikit-learn==1.2.2  # Downgraded for compatibility
+scikit-learn==1.2.2
 matplotlib==3.7.1
-
-# ENHANCED VISUALIZATION
 plotly==5.15.0
-
-# MEDICAL FEATURES
-spacy==3.5.0  # Slightly older but more stable
-scispacy==0.5.0  # Medical NER alternative
-
-# VOICE PROCESSING (Optional)
-SpeechRecognition==3.8.1
-sounddevice==0.4.6  # Alternative to pyaudio
-
-# 3D VISUALIZATION (Optional)
-pyvista==0.37.0  # Works with older VTK
-vtk==9.1.0  # More compatible version
-
-# DEPLOYMENT
 gunicorn==21.2.0
-gevent==22.10.1  # Slightly older version
-
-# UTILITIES
 python-dotenv==1.0.0
 requests==2.31.0
