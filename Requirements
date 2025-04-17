@@ -8,13 +8,13 @@ matplotlib==3.7.1
 # ENHANCED VISUALIZATION
 plotly==5.15.0
 
-# MEDICAL FEATURES
-med7==0.1.1
+# MEDICAL FEATURES (Updated)
 spacy==3.5.3
+scispacy==0.5.1  # Alternative to med7 for medical NER
 
 # VOICE PROCESSING (Optional)
 SpeechRecognition==3.8.1
-pyaudio==0.2.13
+pyaudio==0.2.13  # May need portaudio installation first
 
 # 3D VISUALIZATION (Optional)
 vtk==9.2.6
