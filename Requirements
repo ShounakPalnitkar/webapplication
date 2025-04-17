@@ -3,3 +3,15 @@ pandas==1.5.3
 numpy==1.23.5
 scikit-learn==1.3.0
 matplotlib==3.7.1
+plotly==5.15.0
+chart.js==3.9.1
+med7==0.1.1
+spacy==3.5.3
+SpeechRecognition==3.8.1
+pyaudio==0.2.13
+vtk==9.2.6
+pyvista==0.38.5
+gunicorn==21.2.0
+gevent==22.10.2
+python-dotenv==1.0.0
+requests==2.31.0
